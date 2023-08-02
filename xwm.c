@@ -9,85 +9,303 @@
 
 #define UNUSED(x) (void)(x)
 
+/* Current display */
 static xcb_connection_t * dpy;
+
+/* Current focused screen */
 static xcb_screen_t * scre;
+
+/* Current focused window */
 static xcb_drawable_t win;
 static uint32_t values[3];
 
+/* Kills a window */
 static void killclient(char **com) {
 	UNUSED(com);
 	xcb_kill_client(dpy, win);
 }
 
+/* Kills the entire desktop */
 static void closewm(char **com) {
 	UNUSED(com);
-	if (dpy != NULL) {
+	if (dpy != NULL) {		
 		xcb_disconnect(dpy);
 	}
 }
 
+/* Spawns a window by recieving a command */
 static void spawn(char **com) {
 	if (fork() == 0) {
 		setsid();
 		if (fork() != 0) {
-			_exit(0);
+			_exit(0);	
 		}
+		/* child thread executes the command */
 		execvp((char*)com[0], (char**)com);
 		_exit(0);
 	}
 	wait(NULL);
 }
 
-static void fullclient(char **com) {
-	UNUSED(com);
+/* Makes a window fullscreen */
+static void moveandresizeclient(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
 	uint32_t vals[4];
-	vals[0] = 0 - BORDER_WIDTH;
-	vals[1] = 0 - BORDER_WIDTH;
-	vals[2] = scre->width_in_pixels;
-	vals[3] = scre->height_in_pixels;
-	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_X |
-		XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
-		XCB_CONFIG_WINDOW_HEIGHT, vals);
+
+	/* x, y, width and height of new window */
+	vals[0] = x;
+	vals[1] = y;
+	vals[2] = width;
+	vals[3] = height;
+
+	/* applies changes to the desired window */
+	xcb_configure_window(
+			dpy, 				/* display */
+			win, 				/* window  */
+
+			/* arguments to modify the window */
+			XCB_CONFIG_WINDOW_X	|	
+			XCB_CONFIG_WINDOW_Y |	
+			XCB_CONFIG_WINDOW_WIDTH |	
+			XCB_CONFIG_WINDOW_HEIGHT,
+
+			/* the values corresponding to the arguments */
+			vals
+	);
+
+	/* writes to buffer */
 	xcb_flush(dpy);
 }
 
+/* Makes a window fullscreen */
+static void fullclient(char **com) {
+	UNUSED(com);
+	uint32_t x		= 0 - BORDER_WIDTH;
+	uint32_t y		= 0 - BORDER_WIDTH;
+	uint32_t width	= scre->width_in_pixels;
+	uint32_t height = scre->height_in_pixels;
+	moveandresizeclient(x, y, width, height);
+}
+
+/* Maximizes a window */
+static void maximizeclient(char **com) {
+	UNUSED(com);
+	uint32_t x		= 0;
+	uint32_t y		= 0;
+	uint32_t width	= scre->width_in_pixels - BORDER_WIDTH*2;
+	uint32_t height = scre->height_in_pixels - BORDER_WIDTH*2 - PANEL_HEIGHT;
+	moveandresizeclient(x, y, width, height);
+}
+
+/* Tiles a window to the left half of the screen */
+static void tileclientleft(char **com) {
+	UNUSED(com);
+	if (win != 0) {
+  		xcb_get_geometry_reply_t *geom;
+		geom = xcb_get_geometry_reply(dpy, xcb_get_geometry (dpy, win), NULL);
+
+		uint32_t x		= 0;
+		uint32_t y		= 0;
+		uint32_t width	= scre->width_in_pixels/2 - BORDER_WIDTH*2;
+		uint32_t height = scre->height_in_pixels - BORDER_WIDTH*2 - PANEL_HEIGHT;
+		
+		if (width == geom->width) {
+			width = scre->width_in_pixels - BORDER_WIDTH*2;
+		}
+		if (scre->width_in_pixels/2 == geom->x) { 
+			x = 0;
+			width =	scre->width_in_pixels/2 - BORDER_WIDTH*2;
+		}
+		moveandresizeclient(x, y, width, height);
+		free(geom); 
+	}
+}
+
+/* Tiles a window to the right half of the screen */
+static void tileclientright(char **com) {
+	UNUSED(com);
+	if (win != 0) {
+  		xcb_get_geometry_reply_t *geom;
+		geom = xcb_get_geometry_reply(dpy, xcb_get_geometry (dpy, win), NULL);
+
+		uint32_t x		= scre->width_in_pixels/2;
+		uint32_t y		= 0;
+		uint32_t width	= scre->width_in_pixels/2 - BORDER_WIDTH*2;
+		uint32_t height = scre->height_in_pixels - BORDER_WIDTH*2 - PANEL_HEIGHT;
+
+		if (width == geom->width) {
+			x = 0;
+			width = scre->width_in_pixels - BORDER_WIDTH*2;
+		}
+		if (0 == geom->x) { 
+			x = scre->width_in_pixels/2;
+			width =	scre->width_in_pixels/2 - BORDER_WIDTH*2;
+		}
+		moveandresizeclient(x, y, width, height);
+		free(geom); 
+	}
+}
+
+/* Tiles a window to the top half of the screen */
+static void tileclienttop(char **com) {
+	UNUSED(com);
+	if (win != 0) {
+  		xcb_get_geometry_reply_t *geom;
+		geom = xcb_get_geometry_reply(dpy, xcb_get_geometry (dpy, win), NULL);
+
+		uint32_t x		= 0;
+		uint32_t y		= 0;
+		uint32_t width	= scre->width_in_pixels - BORDER_WIDTH*2;
+		uint32_t height = (scre->height_in_pixels - PANEL_HEIGHT)/2 - BORDER_WIDTH*2;
+		
+		if (height == geom->height) {
+			height = scre->height_in_pixels - PANEL_HEIGHT - BORDER_WIDTH*2;
+		}
+		if ((scre->height_in_pixels - PANEL_HEIGHT)/2 == geom->y) { 
+			y = 0;
+			height = (scre->height_in_pixels - PANEL_HEIGHT)/2 - BORDER_WIDTH*2;
+		}
+		if (scre->width_in_pixels/2 - BORDER_WIDTH*2 == geom->width) {
+			x = geom->x;
+			width = geom->width;
+		}
+		moveandresizeclient(x, y, width, height);
+		free(geom); 
+	}
+}
+
+
+/* Tiles a window to the bottom half of the screen */
+static void tileclientbottom(char **com) {
+	UNUSED(com);
+	if (win != 0) {
+  		xcb_get_geometry_reply_t *geom;
+		geom = xcb_get_geometry_reply(dpy, xcb_get_geometry (dpy, win), NULL);
+
+		uint32_t x		= 0;
+		uint32_t y		= (scre->height_in_pixels - PANEL_HEIGHT)/2;
+		uint32_t width	= scre->width_in_pixels - BORDER_WIDTH*2;
+		uint32_t height = (scre->height_in_pixels - PANEL_HEIGHT)/2 - BORDER_WIDTH*2;
+		
+		if (height == geom->height) {
+			y = 0;
+			height = scre->height_in_pixels - PANEL_HEIGHT - BORDER_WIDTH*2;
+		}
+		if (0 == geom->y) { 
+			y = (scre->height_in_pixels - PANEL_HEIGHT)/2;
+			height = (scre->height_in_pixels - PANEL_HEIGHT)/2 - BORDER_WIDTH*2;
+		}
+		if (scre->width_in_pixels/2 - BORDER_WIDTH*2 == geom->width) {
+			x = geom->x;
+			width = geom->width;
+		}
+		moveandresizeclient(x, y, width, height);
+		free(geom); 
+	}
+}
+
+/* Handles button presses */
 static void handleButtonPress(xcb_generic_event_t *ev) {
 	xcb_button_press_event_t  *e = (xcb_button_press_event_t *) ev;
 	win = e->child;
 	values[0] = XCB_STACK_MODE_ABOVE;
 	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_STACK_MODE, values);
+
 	values[2] = ((1 == e->detail) ? 1 : ((win != 0) ? 3 : 0 ));
-	xcb_grab_pointer(dpy, 0, scre->root, XCB_EVENT_MASK_BUTTON_RELEASE
-		| XCB_EVENT_MASK_BUTTON_MOTION | XCB_EVENT_MASK_POINTER_MOTION_HINT,
-		XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC,
-		scre->root, XCB_NONE, XCB_CURRENT_TIME);
+
+	xcb_grab_pointer(
+			dpy, 
+			0, 
+			scre->root, 
+			XCB_EVENT_MASK_BUTTON_RELEASE | 
+			XCB_EVENT_MASK_BUTTON_MOTION | 
+			XCB_EVENT_MASK_POINTER_MOTION_HINT,
+			XCB_GRAB_MODE_ASYNC, 
+			XCB_GRAB_MODE_ASYNC,
+			scre->root, 
+			XCB_NONE, 
+			XCB_CURRENT_TIME
+	);
 }
 
+/* Manages window moving and resizing with the mouse */
 static void handleMotionNotify(xcb_generic_event_t *ev) {
 	UNUSED(ev);
+	uint32_t vals[4];
 	xcb_query_pointer_cookie_t coord = xcb_query_pointer(dpy, scre->root);
 	xcb_query_pointer_reply_t *poin = xcb_query_pointer_reply(dpy, coord, 0);
+
+	/* Moving window with the mouse */
 	if ((values[2] == (uint32_t)(1)) && (win != 0)) {
 		xcb_get_geometry_cookie_t geom_now = xcb_get_geometry(dpy, win);
 		xcb_get_geometry_reply_t *geom = xcb_get_geometry_reply(dpy, geom_now, NULL);
-		uint16_t geom_x = geom->width + (2 * BORDER_WIDTH);
-		uint16_t geom_y = geom->height + (2 * BORDER_WIDTH);
-		values[0] = ((poin->root_x + geom_x) > scre->width_in_pixels) ?
-			(scre->width_in_pixels - geom_x) : poin->root_x;
-		values[1] = ((poin->root_y + geom_y) > scre->height_in_pixels) ?
-			(scre->height_in_pixels - geom_y) : poin->root_y;
-		xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_X
-			| XCB_CONFIG_WINDOW_Y, values);
-	} else if ((values[2] == (uint32_t)(3)) && (win != 0)) {
+
+		uint16_t width = geom->width/2 + (2 * BORDER_WIDTH);
+		uint16_t height = geom->height/2 + (2 * BORDER_WIDTH);
+
+		vals[0] = poin->root_x - width;
+		vals[1] = poin->root_y - height;
+		vals[2] = WINDOW_WIDTH;
+		vals[3] = WINDOW_HEIGHT;
+
+		/* manages mouse tiling */
+		if (poin->root_y < TILE_BORDER) {
+			vals[0] = 0;
+			vals[1] = 0;
+			vals[2] = scre->width_in_pixels - BORDER_WIDTH*2;
+			vals[3] = (scre->height_in_pixels - PANEL_HEIGHT)/2 - BORDER_WIDTH*2;
+		}
+		if (poin->root_y > scre->height_in_pixels - TILE_BORDER) {
+			vals[0] = 0;
+			vals[1] = (scre->height_in_pixels - PANEL_HEIGHT)/2;
+			vals[2] = scre->width_in_pixels - BORDER_WIDTH*2;
+			vals[3] = (scre->height_in_pixels - PANEL_HEIGHT)/2 - BORDER_WIDTH*2;
+		}
+		if (poin->root_x < TILE_BORDER) {
+			vals[0] = 0;
+			vals[1] = 0;
+			vals[2] = scre->width_in_pixels/2 - BORDER_WIDTH*2;
+			vals[3] = scre->height_in_pixels - BORDER_WIDTH*2 - PANEL_HEIGHT;
+		}
+		if (poin->root_x > scre->width_in_pixels - TILE_BORDER) {
+			vals[0] = scre->width_in_pixels/2;
+			vals[1] = 0;
+			vals[2] = scre->width_in_pixels/2 - BORDER_WIDTH*2;
+			vals[3] = scre->height_in_pixels - BORDER_WIDTH*2 - PANEL_HEIGHT;
+		}
+
+		/* applies changes to the desired window */
+		xcb_configure_window(
+				dpy, 				/* display */
+				win, 				/* window  */
+	
+				/* arguments to modify the window */
+				XCB_CONFIG_WINDOW_X	|	
+				XCB_CONFIG_WINDOW_Y |	
+				XCB_CONFIG_WINDOW_WIDTH |	
+				XCB_CONFIG_WINDOW_HEIGHT,
+	
+				/* the values corresponding to the arguments */
+				vals
+		);
+	}
+
+	/* Resizing window with the mouse */
+	else if ((values[2] == (uint32_t)(3)) && (win != 0)) {
 		xcb_get_geometry_cookie_t geom_now = xcb_get_geometry(dpy, win);
 		xcb_get_geometry_reply_t* geom = xcb_get_geometry_reply(dpy, geom_now, NULL);
-		if (!((poin->root_x <= geom->x) || (poin->root_y <= geom->y))) {
+		if (!((poin->root_x <= geom->x) || (poin->root_y <= geom->y))) 
+		{
 			values[0] = poin->root_x - geom->x - BORDER_WIDTH;
 			values[1] = poin->root_y - geom->y - BORDER_WIDTH;
 			if ((values[0] >= (uint32_t)(WINDOW_MIN_WIDTH)) &&
 				(values[1] >= (uint32_t)(WINDOW_MIN_HEIGHT))) {
-				xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_WIDTH
-					| XCB_CONFIG_WINDOW_HEIGHT, values);
+				xcb_configure_window(
+						dpy, 
+						win, 
+						XCB_CONFIG_WINDOW_WIDTH | 
+						XCB_CONFIG_WINDOW_HEIGHT, 
+						values
+				);
 			}
 		}
 	} else {}
@@ -109,6 +327,7 @@ static xcb_keysym_t xcb_get_keysym(xcb_keycode_t keycode) {
 	return keysym;
 }
 
+/* Set focus to a Window */
 static void setFocus(xcb_drawable_t window) {
 	if ((window != 0) && (window != scre->root)) {
 		xcb_set_input_focus(dpy, XCB_INPUT_FOCUS_POINTER_ROOT, window,
@@ -116,6 +335,7 @@ static void setFocus(xcb_drawable_t window) {
 	}
 }
 
+/* Applies focus color to a Window */
 static void setFocusColor(xcb_window_t window, int focus) {
 	if ((BORDER_WIDTH > 0) && (scre->root != window) && (0 != window)) {
 		uint32_t vals[1];
@@ -125,10 +345,13 @@ static void setFocusColor(xcb_window_t window, int focus) {
 	}
 }
 
+/* Handle all the events that can be executed via Keyboard commands */
 static void handleKeyPress(xcb_generic_event_t *ev) {
 	xcb_key_press_event_t *e = ( xcb_key_press_event_t *) ev;
 	xcb_keysym_t keysym = xcb_get_keysym(e->detail);
 	win = e->child;
+
+	// Kays obtained from the configuration file
 	int key_table_size = sizeof(keys) / sizeof(*keys);
 	for (int i = 0; i < key_table_size; ++i) {
 		if ((keys[i].keysym == keysym) && (keys[i].mod == e->state)) {
