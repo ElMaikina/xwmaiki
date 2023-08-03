@@ -1,16 +1,23 @@
 /* See LICENSE file for copyright and license details. */
 
 /* typedefs */
+
+/*
+ * Struct that manages key presses and commands
+ * */
 typedef struct {
-    unsigned int mod;
-    xcb_keysym_t keysym;
-    void (*func)(char **com);
-    char **com;
+    unsigned int mod;			/* ModKey */
+    xcb_keysym_t keysym;		/* KeySymbol */
+    void (*func)(char **com);	/* Function to invoke */
+    char **com;					/* Command parameters */
 } Key;
 
+/*
+ * Event and input handler
+ * */
 typedef struct {
-    uint32_t request;
-    void (*func)(xcb_generic_event_t *ev);
+    uint32_t request;						/* Request Thread */
+    void (*func)(xcb_generic_event_t *ev);	/* XCB Event */
 } handler_func_t;
 
 /* convert keycode to keysym and back */
@@ -21,7 +28,13 @@ static xcb_keysym_t    xcb_get_keysym(xcb_keycode_t keycode);
 static void killclient(char **com);
 static void spawn(char **com);
 static void closewm(char **com);
+static void moveandresizeclient(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 static void fullclient(char **com);
+static void maximizeclient(char **com);
+static void tileclientleft(char **com);
+static void tileclientright(char **com);
+static void tileclienttop(char **com);
+static void tileclientbottom(char **com);
 
 /* window behavior */
 static void setFocus(xcb_drawable_t window);
